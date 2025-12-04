@@ -121,11 +121,10 @@ const highlightedJson = computed(() => {
   const json = displayRaw();
   if (!json) return '';
 
-  // 1. Escape HTML entities to be safe
+  // 1. Escape HTML entities
   const escaped = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // 2. Regex to match JSON tokens
-  // Matches: Keys, Strings, Booleans, Nulls, Numbers
   return escaped.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
     let cls = 'text-amber-600 dark:text-amber-400'; // Default: Number
 
@@ -158,6 +157,57 @@ const copyRawJson = async () => {
   }
 };
 
+const downloadRawJson = () => {
+  const text = displayRaw();
+  if (!text) return;
+
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+
+  // Default fallback filename
+  let filename = `ro-crate-entity-${props.id.replace(/[^a-z0-9]/gi, '_').substring(0, 50)}.json`;
+
+  // Logic: Parse the JSON to find the correct filename
+  if (props.fullCrateJson) {
+    try {
+      const json = JSON.parse(props.fullCrateJson);
+      const graph = json['@graph'] || [];
+
+      // Find the entity that ends in .json AND describes the root ('./')
+      // This ensures we get 'ro-crate-metadata.json' but NOT 'subcrate/...'
+      const metadataEntity = graph.find((node: any) => {
+        const id = node['@id'];
+        if (!id || !id.endsWith('.json')) return false;
+
+        // Check if this entity is "about" the root dataset
+        const about = node['about'];
+        const aboutId = about ? (about['@id'] || about) : '';
+
+        return aboutId === './' || aboutId === '.';
+      });
+
+      if (metadataEntity && metadataEntity['@id']) {
+        filename = metadataEntity['@id'];
+      } else {
+        // Simple fallback: If specifically standard name exists
+        const standard = graph.find((n: any) => n['@id'] === 'ro-crate-metadata.json');
+        if (standard) filename = 'ro-crate-metadata.json';
+      }
+    } catch (e) {
+      console.warn("Failed to determine semantic filename, using default.");
+    }
+  }
+
+  a.href = url;
+  a.download = filename;
+
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 const normalizeValues = (val: any) => {
   return Array.isArray(val) ? val : [val];
 }
@@ -185,23 +235,38 @@ const normalizeValues = (val: any) => {
             </AlertDialogTrigger>
             <AlertDialogContent class="text-[var(--c-text-muted)] bg-[var(--c-bg-card)] border-[var(--c-border)] max-w-4xl max-h-[80vh] overflow-y-auto">
               <AlertDialogHeader>
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between flex-wrap gap-2">
                   <AlertDialogTitle class="text-[var(--c-text-main)]">Raw JSON-LD</AlertDialogTitle>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    class="h-8 border-[var(--c-border)] bg-[var(--c-bg-app)] hover:bg-[var(--c-hover)] text-[var(--c-text-muted)] hover:text-[var(--c-text-main)] flex items-center gap-2"
-                    @click="copyRawJson"
-                  >
-                    <span v-if="!isCopied" class="flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                      Copy JSON
-                    </span>
-                    <span v-else class="flex items-center gap-2 text-green-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-                      Copied!
-                    </span>
-                  </Button>
+
+                  <div class="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      class="h-8 border-[var(--c-border)] bg-[var(--c-bg-app)] hover:bg-[var(--c-hover)] text-[var(--c-text-muted)] hover:text-[var(--c-text-main)] flex items-center gap-2"
+                      @click="downloadRawJson"
+                      title="Download as JSON file"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Download
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      class="h-8 border-[var(--c-border)] bg-[var(--c-bg-app)] hover:bg-[var(--c-hover)] text-[var(--c-text-muted)] hover:text-[var(--c-text-main)] flex items-center gap-2"
+                      @click="copyRawJson"
+                    >
+                      <span v-if="!isCopied" class="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        Copy
+                      </span>
+                      <span v-else class="flex items-center gap-2 text-green-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        Copied!
+                      </span>
+                    </Button>
+                  </div>
+
                 </div>
                 <AlertDialogDescription class="text-[var(--c-text-muted)]/60">Full source representation.</AlertDialogDescription>
               </AlertDialogHeader>
